@@ -106,15 +106,30 @@ jobs:
         git clone ${{ github.event.inputs.DEVICE_TREE }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.DEVICE_PATH }}
         cd ${{ github.event.inputs.DEVICE_PATH }}
         echo "COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_ENV
-
-    - name: Check Manifest Branch
-      uses: haya14busa/action-cond@v1
-      id: fox_branch
-      with:
-        cond: ${{ github.event.inputs.MANIFEST_BRANCH == '11.0' || github.event.inputs.MANIFEST_BRANCH == '12.1' }}
-        if_true: lunch twrp_${{ github.event.inputs.DEVICE_NAME }}-eng && make clean && mka adbd ${{ github.event.inputs.BUILD_TARGET }}image
-        if_false: lunch omni_${{ github.event.inputs.DEVICE_NAME }}-eng && make clean && mka ${{ github.event.inputs.BUILD_TARGET }}image
-      
+    
+    - name: Determine product name
+      id: product_name
+      run: |
+        cd ${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/${{ github.event.inputs.DEVICE_PATH }}
+        # Пытаемся определить имя продукта из AndroidProducts.mk
+        if [ -f AndroidProducts.mk ]; then
+            PRODUCT_MAKEFILE=$(grep "PRODUCT_MAKEFILES" AndroidProducts.mk | head -1 | cut -d '/' -f 2 | cut -d '.' -f 1)
+            echo "PRODUCT_NAME=${PRODUCT_MAKEFILE}" >> $GITHUB_ENV
+            echo "Found product: ${PRODUCT_MAKEFILE}"
+        else
+            # Если файл не найден, используем omni по умолчанию
+            echo "PRODUCT_NAME=omni_${{ github.event.inputs.DEVICE_NAME }}" >> $GITHUB_ENV
+            echo "Using default product: omni_${{ github.event.inputs.DEVICE_NAME }}"
+        fi
+    
+    - name: Set build command
+      id: build_cmd
+      run: |
+        # Для всех версий используем определенное имя продукта
+        BUILD_CMD="lunch ${{ env.PRODUCT_NAME }}-eng && make clean && mka ${{ github.event.inputs.BUILD_TARGET }}image"
+        echo "::set-output name=value::${BUILD_CMD}"
+        echo "Build command: ${BUILD_CMD}"
+    
     - name: Building OrangeFox
       run: |
         cd ${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
@@ -122,16 +137,16 @@ jobs:
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         set -e
-        ${{ steps.fox_branch.outputs.value }}
-
-    - name: Set Build Date # Output will be use in Release
-      run: |
-        echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
-        DEVICE_TREE_URL="${{ github.event.inputs.DEVICE_TREE }}"
-        if [[ "${DEVICE_TREE_URL}" == *.git ]]; then
-          DEVICE_TREE_URL="${DEVICE_TREE_URL%.git}"
-        fi
-        echo "DEVICE_TREE_URL=${DEVICE_TREE_URL}" >> $GITHUB_ENV
+        ${{ steps.build_cmd.outputs.value }}
+    
+        - name: Set Build Date # Output will be use in Release
+          run: |
+            echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+            DEVICE_TREE_URL="${{ github.event.inputs.DEVICE_TREE }}"
+            if [[ "${DEVICE_TREE_URL}" == *.git ]]; then
+              DEVICE_TREE_URL="${DEVICE_TREE_URL%.git}"
+            fi
+            echo "DEVICE_TREE_URL=${DEVICE_TREE_URL}" >> $GITHUB_ENV
 
     - name: Check if Recovery Exist
       run: |
