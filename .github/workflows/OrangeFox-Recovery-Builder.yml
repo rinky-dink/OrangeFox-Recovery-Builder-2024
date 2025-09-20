@@ -113,7 +113,8 @@ jobs:
         cd ${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/${{ github.event.inputs.DEVICE_PATH }}
         # Пытаемся определить имя продукта из AndroidProducts.mk
         if [ -f AndroidProducts.mk ]; then
-            PRODUCT_MAKEFILE=$(grep "PRODUCT_MAKEFILES" AndroidProducts.mk | head -1 | cut -d '/' -f 2 | cut -d '.' -f 1)
+            # Более точное извлечение имени файла
+            PRODUCT_MAKEFILE=$(grep "PRODUCT_MAKEFILES" AndroidProducts.mk | head -1 | awk -F '/' '{print $NF}' | awk -F '.' '{print $1}' | tr -d ' ')
             echo "PRODUCT_NAME=${PRODUCT_MAKEFILE}" >> $GITHUB_ENV
             echo "Found product: ${PRODUCT_MAKEFILE}"
         else
@@ -127,7 +128,7 @@ jobs:
       run: |
         # Для всех версий используем определенное имя продукта
         BUILD_CMD="lunch ${{ env.PRODUCT_NAME }}-eng && make clean && mka ${{ github.event.inputs.BUILD_TARGET }}image"
-        echo "::set-output name=value::${BUILD_CMD}"
+        echo "BUILD_CMD=${BUILD_CMD}" >> $GITHUB_ENV
         echo "Build command: ${BUILD_CMD}"
     
     - name: Building OrangeFox
@@ -137,7 +138,7 @@ jobs:
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         set -e
-        ${{ steps.build_cmd.outputs.value }}
+        ${{ env.BUILD_CMD }}
     
         - name: Set Build Date # Output will be use in Release
           run: |
